@@ -1,43 +1,23 @@
 // BACKEND/src/app.js
 require('dotenv').config(); // Memuat variabel lingkungan dari file .env
 
-// --- MULAI KODE DEBUGGING SEMENTARA ---
-// Baris-baris ini akan membantu Anda melihat nilai variabel lingkungan saat aplikasi berjalan.
-// Hapus baris-baris ini setelah Anda berhasil terhubung ke database di kedua lingkungan.
-console.log('DEBUG (Initial Env Vars):');
-console.log('  process.env.DB_HOST =', process.env.DB_HOST);
-console.log('  process.env.DB_USER =', process.env.DB_USER);
-console.log('  process.env.DB_PASSWORD =', process.env.DB_PASSWORD ? '*****' : 'UNDEFINED/EMPTY');
-console.log('  process.env.DB_NAME =', process.env.DB_NAME);
-console.log('  process.env.PORT =', process.env.PORT);
-
-console.log('  process.env.MYSQL_HOST =', process.env.MYSQL_HOST);
-console.log('  process.env.MYSQL_USER =', process.env.MYSQL_USER);
-console.log('  process.env.MYSQL_PASSWORD =', process.env.MYSQL_PASSWORD ? '*****' : 'UNDEFINED/EMPTY');
-console.log('  process.env.MYSQL_DATABASE =', process.env.MYSQL_DATABASE);
-console.log('  process.env.MYSQL_PORT =', process.env.MYSQL_PORT);
-console.log('  process.env.MYSQL_URL =', process.env.MYSQL_URL ? '***** (URL exists)' : 'UNDEFINED/EMPTY');
-// --- AKHIR KODE DEBUGGING SEMENTARA ---
-
-
 const express = require('express');
 const cors = require('cors');
 const mysql = require('mysql2'); // Menggunakan mysql2 untuk dukungan promise
 const bodyParser = require('body-parser');
 
 const app = express();
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 3001; // Mengambil PORT dari .env atau default ke 3001
 
 // Middleware
-app.use(cors());
-app.use(bodyParser.json());
+app.use(cors()); // Mengaktifkan CORS untuk semua origin
+app.use(bodyParser.json()); // Mengurai body request JSON
 
 // Koneksi database
 let dbConfig;
 if (process.env.MYSQL_URL) {
   // Jika MYSQL_URL ada (dari Railway), gunakan URL tersebut
   dbConfig = process.env.MYSQL_URL;
-  console.log('DEBUG (DB Config Source): Using MYSQL_URL for database connection.');
 } else {
   // Jika tidak ada (lokal atau jika Railway tidak menginjeksi URL), fallback ke variabel DB_* dari .env
   dbConfig = {
@@ -47,17 +27,7 @@ if (process.env.MYSQL_URL) {
     database: process.env.MYSQL_DATABASE || process.env.DB_NAME,
     port: process.env.MYSQL_PORT ? parseInt(process.env.MYSQL_PORT) : (process.env.DB_PORT ? parseInt(process.env.DB_PORT) : 3306)
   };
-  console.log('DEBUG (DB Config Source): Using DB_* or individual MYSQL_* variables for database connection.');
 }
-
-console.log('DEBUG (Final DB Config):', {
-    host: typeof dbConfig === 'string' ? dbConfig : dbConfig.host,
-    user: typeof dbConfig === 'string' ? 'from URL' : dbConfig.user,
-    password: typeof dbConfig === 'string' ? 'from URL' : (dbConfig.password ? '*****' : 'UNDEFINED/EMPTY'),
-    database: typeof dbConfig === 'string' ? 'from URL' : dbConfig.database,
-    port: typeof dbConfig === 'string' ? 'from URL' : dbConfig.port
-});
-
 
 const db = mysql.createConnection(dbConfig);
 
@@ -71,7 +41,7 @@ db.connect((err) => {
   console.log('✅ Terhubung ke database MySQL');
 });
 
-// --- Endpoint API (tidak ada perubahan di sini) ---
+// --- Endpoint API ---
 
 // Mendapatkan semua bookings
 app.get('/api/bookings', (req, res) => {
@@ -80,13 +50,14 @@ app.get('/api/bookings', (req, res) => {
       console.error('❌ Gagal mengambil data bookings:', err);
       return res.status(500).json({ error: 'Gagal mengambil data' });
     }
+    // Parse string JSON 'items' kembali ke array untuk setiap booking
     const parsedResults = results.map(booking => {
         if (typeof booking.items === 'string') {
             try {
                 booking.items = JSON.parse(booking.items);
             } catch (e) {
                 console.error("Gagal mengurai JSON items dari DB:", e);
-                booking.items = [];
+                booking.items = []; // Fallback jika penguraian gagal
             }
         }
         return booking;
@@ -106,13 +77,14 @@ app.get('/api/bookings/:bookingCode', (req, res) => {
     if (results.length === 0) {
       return res.status(404).json({ message: 'Booking tidak ditemukan.' });
     }
+    // Parse string JSON 'items' kembali ke array
     const booking = results[0];
     if (typeof booking.items === 'string') {
         try {
             booking.items = JSON.parse(booking.items);
         } catch (e) {
             console.error("Gagal mengurai JSON items dari DB:", e);
-            booking.items = [];
+            booking.items = []; // Fallback jika penguraian gagal
         }
     }
     res.json(booking);
@@ -121,7 +93,7 @@ app.get('/api/bookings/:bookingCode', (req, res) => {
 
 // Mendapatkan semua data equipment (alat)
 app.get('/api/equipment', (req, res) => {
-  db.query('SELECT * FROM equipment', (err, results) => {
+  db.query('SELECT * FROM equipment', (err, results) => { // Pastikan nama tabel adalah 'equipment'
     if (err) {
       console.error('❌ Gagal mengambil data equipment:', err);
       return res.status(500).json({ error: 'Gagal mengambil data equipment' });
@@ -135,48 +107,54 @@ app.post('/api/bookings', async (req, res) => {
   const {
     booking_code,
     user_name,
-    items,
+    items, // Diharapkan berupa array of strings, misal: ["Tenda", "Sleeping Bag"]
     rent_date,
     return_date,
     payment_method,
     status
   } = req.body;
 
+  // --- Validasi Input Sisi Server ---
   if (!booking_code || !user_name || !items || items.length === 0 || !rent_date || !return_date || !payment_method || !status) {
     return res.status(400).json({ error: 'Semua field wajib diisi (booking_code, user_name, items, rent_date, return_date, payment_method, status).' });
   }
 
+  // Validasi format tanggal
   const isValidDate = (dateString) => {
     const regEx = /^\d{4}-\d{2}-\d{2}$/;
     if (!dateString.match(regEx)) return false;
     const d = new Date(dateString);
     const dNum = d.getTime();
-    if (isNaN(dNum)) return false;
+    if (isNaN(dNum)) return false; // Periksa tanggal tidak valid (misal: "2023-02-30")
     return d.toISOString().slice(0, 10) === dateString;
   };
 
   if (!isValidDate(rent_date) || !isValidDate(return_date)) {
-    return res.status(400).json({ error: 'Format tanggal tidak valid. Harap gunakan-MM-DD.' });
+    return res.status(400).json({ error: 'Format tanggal tidak valid. Harap gunakan YYYY-MM-DD.' });
   }
 
+  // Pastikan tanggal kembali tidak sebelum tanggal sewa
   const startDate = new Date(rent_date);
   const endDate = new Date(return_date);
-  startDate.setHours(0,0,0,0);
-  endDate.setHours(0,0,0,0);
+  startDate.setHours(0,0,0,0); // Normalisasi ke awal hari
+  endDate.setHours(0,0,0,0);   // Normalisasi ke awal hari
 
   if (endDate < startDate) {
     return res.status(400).json({ error: 'Tanggal kembali tidak boleh sebelum tanggal sewa.' });
   }
 
+  // Hitung total harga di backend untuk mencegah manipulasi
   let totalPrice = 0;
   let itemsString;
   try {
     const [equipmentDataRows] = await db.promise().query('SELECT name, price, stock FROM equipment');
-    const equipmentData = equipmentDataRows;
+    const equipmentData = equipmentDataRows; // Akses elemen pertama dari array hasil query
 
     const diffTime = Math.abs(endDate.getTime() - startDate.getTime());
+    // +1 karena sewa tanggal 5 dan kembali tanggal 5 adalah 1 hari, 5 hingga 6 adalah 2 hari.
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
     
+    // Periksa durasi sewa maksimum (jika diffDays > 7, harus ditangani di frontend, namun berguna untuk diperiksa kembali di sini)
     if (diffDays > 7) {
         return res.status(400).json({ error: 'Maksimal sewa adalah 7 hari.' });
     }
@@ -186,13 +164,14 @@ app.post('/api/bookings', async (req, res) => {
         if (!item) {
             return res.status(400).json({ error: `Alat "${itemName}" tidak ditemukan.` });
         }
-        totalPrice += item.price * diffDays;
+        totalPrice += item.price * diffDays; // Hitung total berdasarkan durasi
     }
-    itemsString = JSON.stringify(items);
+    itemsString = JSON.stringify(items); // Simpan item sebagai string JSON
   } catch (e) {
     console.error('Error selama perhitungan harga item atau stringify JSON:', e);
     return res.status(500).json({ error: 'Gagal memproses item.' });
   }
+  // --- Akhir Validasi Input & Perhitungan Harga ---
 
   const sql = `
     INSERT INTO bookings
@@ -208,7 +187,7 @@ app.post('/api/bookings', async (req, res) => {
       rent_date,
       return_date,
       payment_method,
-      totalPrice,
+      totalPrice, // Menggunakan harga yang dihitung backend
       status
     ],
     (err, result) => {
@@ -244,7 +223,7 @@ app.post('/api/check-stock', async (req, res) => {
 
     if (!isValidDate(rentDate) || !isValidDate(returnDate)) {
         console.error('Validation Error: Invalid date format in /api/check-stock request.');
-        return res.status(400).json({ error: 'Format tanggal tidak valid. Harap gunakan-MM-DD.' });
+        return res.status(400).json({ error: 'Format tanggal tidak valid. Harap gunakan YYYY-MM-DD.' });
     }
 
     const startDate = new Date(rentDate);
@@ -261,6 +240,7 @@ app.post('/api/check-stock', async (req, res) => {
         const [equipmentDataRows] = await db.promise().query('SELECT name, stock FROM equipment');
         const equipmentData = equipmentDataRows;
 
+        // Hanya booking dengan status "Menunggu Pembayaran" atau "Menunggu Pengambilan" yang memengaruhi stok
         const [existingBookingsRows] = await db.promise().query("SELECT items, rent_date, return_date FROM bookings WHERE status IN ('Menunggu Pembayaran', 'Menunggu Pengambilan')");
         const existingBookings = existingBookingsRows;
 
@@ -269,6 +249,7 @@ app.post('/api/check-stock', async (req, res) => {
         for (const reqItem of items) {
             const itemInDb = equipmentData.find(e => e.name === reqItem);
             if (!itemInDb) {
+                // Jika item tidak ditemukan di DB, itu tidak tersedia
                 stockStatus[reqItem] = { isAvailable: false, availableStock: 0, message: 'Alat tidak ditemukan.' };
                 continue;
             }
@@ -277,16 +258,21 @@ app.post('/api/check-stock', async (req, res) => {
             existingBookings.forEach(booking => {
                 let bookingItems;
                 try {
+                    // Item disimpan sebagai string JSON, uraikan
                     bookingItems = JSON.parse(booking.items);
                 } catch (e) {
                     console.error("Gagal mengurai JSON items dari DB saat cek stok:", e);
-                    bookingItems = [];
+                    // Jika parsing gagal, anggap saja item ini tidak berpengaruh pada stok
+                    // atau bisa juga dianggap item ini bermasalah
+                    bookingItems = []; // Tetap berikan fallback yang aman
                 }
                 const bookingRentDate = new Date(booking.rent_date);
                 const bookingReturnDate = new Date(booking.return_date);
                 bookingRentDate.setHours(0,0,0,0);
                 bookingReturnDate.setHours(0,0,0,0);
 
+                // Periksa tumpang tindih tanggal:
+                // Tumpang tindih terjadi jika (startDate <= bookingReturnDate) DAN (endDate >= bookingRentDate)
                 const hasOverlap = (startDate <= bookingReturnDate && endDate >= bookingRentDate);
 
                 if (hasOverlap && bookingItems.includes(reqItem)) {
@@ -296,13 +282,14 @@ app.post('/api/check-stock', async (req, res) => {
 
             const remainingStock = itemInDb.stock - bookedCount;
             stockStatus[reqItem] = {
-                isAvailable: remainingStock > 0,
+                isAvailable: remainingStock > 0, // Item tersedia jika sisa stok lebih besar dari 0
                 availableStock: remainingStock
             };
         }
         res.json(stockStatus);
 
     } catch (error) {
+        // Ini adalah catch block terakhir jika ada error di logika try
         console.error('Error saat memeriksa stok:', error);
         res.status(500).json({ error: `Gagal memeriksa stok karena kesalahan server: ${error.message}` });
     }
