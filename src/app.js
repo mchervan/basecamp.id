@@ -1,25 +1,46 @@
 // BACKEND/src/app.js
 require('dotenv').config(); // Memuat variabel lingkungan dari file .env
 
+// --- MULAI KODE DEBUGGING SEMENTARA ---
+// Baris-baris ini akan membantu Anda melihat nilai variabel lingkungan saat aplikasi berjalan.
+// Hapus baris-baris ini setelah Anda berhasil terhubung ke database di kedua lingkungan.
+console.log('DEBUG (Local ENV): process.env.DB_HOST =', process.env.DB_HOST);
+console.log('DEBUG (Local ENV): process.env.DB_USER =', process.env.DB_USER);
+console.log('DEBUG (Local ENV): process.env.DB_PASSWORD =', process.env.DB_PASSWORD ? 'qwerty123' : 'UNDEFINED/EMPTY'); // Jangan tampilkan password asli
+console.log('DEBUG (Local ENV): process.env.DB_NAME =', process.env.DB_NAME);
+console.log('DEBUG (Local ENV): process.env.PORT =', process.env.PORT);
+
+console.log('DEBUG (Railway ENV): process.env.MYSQL_HOST =', process.env.MYSQL_HOST);
+console.log('DEBUG (Railway ENV): process.env.MYSQL_USER =', process.env.MYSQL_USER);
+console.log('DEBUG (Railway ENV): process.env.MYSQL_PASSWORD =', process.env.MYSQL_PASSWORD ? 'qwerty123' : 'UNDEFINED/EMPTY'); // Jangan tampilkan password asli
+console.log('DEBUG (Railway ENV): process.env.MYSQL_DATABASE =', process.env.MYSQL_DATABASE);
+console.log('DEBUG (Railway ENV): process.env.MYSQL_PORT =', process.env.MYSQL_PORT);
+// --- AKHIR KODE DEBUGGING SEMENTARA ---
+
+
 const express = require('express');
 const cors = require('cors');
 const mysql = require('mysql2'); // Menggunakan mysql2 untuk dukungan promise
 const bodyParser = require('body-parser');
 
 const app = express();
-const PORT = process.env.PORT || 3001; // Mengambil PORT dari .env atau default ke 3001
+// Mengambil PORT dari .env atau menggunakan 3001 sebagai default,
+// atau port yang disediakan oleh Railway jika ada (biasanya 8080)
+const PORT = process.env.PORT || 3001;
 
 // Middleware
 app.use(cors()); // Mengaktifkan CORS untuk semua origin
 app.use(bodyParser.json()); // Mengurai body request JSON
 
 // Koneksi database
+// Gunakan variabel Railway (MYSQL_*) jika ada (saat di-deploy)
+// Jika tidak ada (saat di lokal), fallback ke variabel DB_* dari .env
 const db = mysql.createConnection({
-  host: process.env.MYSQL_HOST, // Gunakan MYSQL_HOST dari Railway
-  user: process.env.MYSQL_USER, // Gunakan MYSQL_USER dari Railway
-  password: process.env.MYSQL_PASSWORD, // Gunakan MYSQL_PASSWORD dari Railway
-  database: process.env.MYSQL_DATABASE, // Gunakan MYSQL_DATABASE dari Railway
-  port: process.env.MYSQL_PORT // Gunakan MYSQL_PORT dari Railway (biasanya 3306)
+  host: process.env.MYSQL_HOST || process.env.DB_HOST,
+  user: process.env.MYSQL_USER || process.env.DB_USER,
+  password: process.env.MYSQL_PASSWORD || process.env.DB_PASSWORD,
+  database: process.env.MYSQL_DATABASE || process.env.DB_NAME,
+  port: process.env.MYSQL_PORT ? parseInt(process.env.MYSQL_PORT) : (process.env.DB_PORT ? parseInt(process.env.DB_PORT) : 3306)
 });
 
 // Sambungkan ke database
