@@ -15,10 +15,11 @@ app.use(bodyParser.json()); // Mengurai body request JSON
 
 // Koneksi database
 const db = mysql.createConnection({
-  host: process.env.DB_HOST,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  database: process.env.DB_NAME
+  host: process.env.MYSQL_HOST, // Gunakan MYSQL_HOST dari Railway
+  user: process.env.MYSQL_USER, // Gunakan MYSQL_USER dari Railway
+  password: process.env.MYSQL_PASSWORD, // Gunakan MYSQL_PASSWORD dari Railway
+  database: process.env.MYSQL_DATABASE, // Gunakan MYSQL_DATABASE dari Railway
+  port: process.env.MYSQL_PORT // Gunakan MYSQL_PORT dari Railway (biasanya 3306)
 });
 
 // Sambungkan ke database
